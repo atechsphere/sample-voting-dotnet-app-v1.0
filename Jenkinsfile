@@ -2,7 +2,7 @@ pipeline {
     agent any
     
     tools {
-        dotnet 'dotnet-9.0'
+        dotnetsdk 'dotnet-9.0'
     }
     
     environment {
