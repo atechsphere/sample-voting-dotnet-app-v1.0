@@ -1,0 +1,66 @@
+version: '3.8'
+
+services:
+  voting-app:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile
+    ports:
+      - "8086:80"  # Changed to 8086:80
+    environment:
+      - ASPNETCORE_ENVIRONMENT=Development
+      - ASPNETCORE_URLS=http://+:80
+      - ConnectionStrings__DefaultConnection=Server=mysql-db;Database=VotingDB;User=votinguser;Password=votingpassword123;Port=3306
+    depends_on:
+      mysql-db:
+        condition: service_healthy
+    networks:
+      - voting-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:80/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  mysql-db:
+    image: mysql:8.0
+    command: --default-authentication-plugin=mysql_native_password
+    ports:
+      - "3307:3306"
+    environment:
+      - MYSQL_ROOT_PASSWORD=rootpassword123
+      - MYSQL_DATABASE=VotingDB
+      - MYSQL_USER=votinguser
+      - MYSQL_PASSWORD=votingpassword123
+    volumes:
+      - mysql-data:/var/lib/mysql
+      - ./docker/mysql-init:/docker-entrypoint-initdb.d
+    networks:
+      - voting-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-uvotinguser", "-pvotingpassword123"]
+      timeout: 20s
+      retries: 10
+      interval: 10s
+
+  local-registry:
+    image: registry:2
+    ports:
+      - "5001:5000"  # Using 5001 to avoid conflict with your existing 5000
+    environment:
+      - REGISTRY_HTTP_SECRET=mysecretkey123
+    volumes:
+      - registry-data:/var/lib/registry
+    networks:
+      - voting-network
+    restart: unless-stopped
+
+volumes:
+  mysql-data:
+  registry-data:
+
+networks:
+  voting-network:
+    driver: bridge
