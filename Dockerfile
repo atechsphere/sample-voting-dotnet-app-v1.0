@@ -17,28 +17,24 @@ RUN dotnet restore "VotingAppSolution.sln"
 # Copy all source code
 COPY src/ .
 
+# Run tests (optional - already done in Jenkins)
+# RUN dotnet test "VotingApp.Tests/VotingApp.Tests.csproj" \
+#     --configuration Release \
+#     --logger "trx" \
+#     --results-directory /testresults
+
 # Build and publish
 RUN dotnet publish "VotingApp/VotingApp.csproj" \
     -c Release \
     -o /app/publish \
     --no-restore
 
-# Test stage
-FROM build AS test
-WORKDIR /src
-RUN dotnet test "VotingApp.Tests/VotingApp.Tests.csproj" \
-    --logger "trx" \
-    --results-directory /testresults \
-    --collect:"XPlat Code Coverage" \
-    -- DataCollectionRunSettings.DataCollectors.DataCollector.Configuration.Format=cobertura
-
 # Runtime stage
 FROM mcr.microsoft.com/dotnet/aspnet:9.0 AS runtime
 WORKDIR /app
 EXPOSE 80
-EXPOSE 443
 
-# Install system dependencies
+# Install curl for health checks
 RUN apt-get update \
     && apt-get install -y --no-install-recommends curl \
     && rm -rf /var/lib/apt/lists/*
