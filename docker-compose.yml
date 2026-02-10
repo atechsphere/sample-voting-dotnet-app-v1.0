@@ -6,7 +6,7 @@ services:
       context: .
       dockerfile: docker/Dockerfile
     ports:
-      - "8086:80"  # Changed to 8086:80
+      - "8086:80"
     environment:
       - ASPNETCORE_ENVIRONMENT=Development
       - ASPNETCORE_URLS=http://+:80
@@ -48,7 +48,7 @@ services:
   local-registry:
     image: registry:2
     ports:
-      - "5001:5000"  # Using 5001 to avoid conflict with your existing 5000
+      - "5001:5000"
     environment:
       - REGISTRY_HTTP_SECRET=mysecretkey123
     volumes:
