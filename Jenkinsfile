@@ -2,7 +2,7 @@ pipeline {
     agent any
     
     tools {
-        dotnetsdk 'dotnet-9.0'  # Updated to match Dockerfile
+        dotnetsdk 'dotnet-9.0'
     }
     
     environment {
@@ -26,19 +26,16 @@ pipeline {
             steps {
                 script {
                     sh '''
-                        echo "=== Installing Required Tools ==="
+                        echo "Installing Required Tools"
                         
-                        # Install SonarScanner for .NET
                         dotnet tool list --global | grep sonarscanner || \
                         dotnet tool install --global dotnet-sonarscanner
                         
-                        # Install ReportGenerator
                         dotnet tool list --global | grep reportgenerator || \
                         dotnet tool install --global dotnet-reportgenerator-globaltool
                         
-                        # Verify Docker Compose
                         if ! docker compose version &> /dev/null; then
-                            echo "Installing Docker Compose plugin..."
+                            echo "Installing Docker Compose plugin"
                             sudo apt-get update
                             sudo apt-get install -y docker-compose-plugin
                         fi
@@ -52,7 +49,7 @@ pipeline {
             steps {
                 dir('src') {
                     sh '''
-                        echo "=== Restoring and Building ==="
+                        echo "Restoring and Building"
                         dotnet restore VotingAppSolution.sln
                         dotnet build VotingAppSolution.sln --configuration Release --no-restore
                     '''
@@ -65,7 +62,7 @@ pipeline {
                 dir('src') {
                     script {
                         sh '''
-                            echo "=== Running Tests ==="
+                            echo "Running Tests"
                             dotnet test VotingApp.Tests/VotingApp.Tests.csproj \
                               --configuration Release \
                               --logger "trx;LogFileName=test-results.trx" \
@@ -76,11 +73,11 @@ pipeline {
                         '''
                         
                         sh '''
-                            echo "=== Processing Coverage ==="
+                            echo "Processing Coverage"
                             mkdir -p TestResults/CoverageReport
                             
                             if find . -name "coverage.cobertura.xml" -type f | grep -q .; then
-                                echo "Generating coverage reports..."
+                                echo "Generating coverage reports"
                                 reportgenerator \
                                   -reports:./**/coverage.cobertura.xml \
                                   -targetdir:./TestResults/CoverageReport \
@@ -91,7 +88,7 @@ pipeline {
                                   -targetdir:./TestResults \
                                   -reporttypes:OpenCover
                             else
-                                echo "Creating placeholder coverage file..."
+                                echo "Creating placeholder coverage file"
                                 echo "<?xml version='1.0'?><CoverageSession/>" > TestResults/coverage.opencover.xml
                             fi
                         '''
@@ -126,7 +123,7 @@ pipeline {
                 dir('src') {
                     withSonarQubeEnv('SonarQube-Local') {
                         sh '''
-                            echo "=== SonarQube Analysis ==="
+                            echo "SonarQube Analysis"
                             
                             dotnet sonarscanner begin \
                               /k:"sample-voting-dotnet-app-v1.0" \
@@ -150,9 +147,8 @@ pipeline {
         stage('Build Docker Image') {
             steps {
                 script {
-                    echo "=== Building Docker Image ==="
-                    docker.build("${DOCKER_REGISTRY}/${IMAGE_NAME}:${IMAGE_TAG}", 
-                                 "--file docker/Dockerfile .")
+                    echo "Building Docker Image"
+                    docker.build("${DOCKER_REGISTRY}/${IMAGE_NAME}:${IMAGE_TAG}", "--file docker/Dockerfile .")
                 }
             }
         }
@@ -172,15 +168,12 @@ pipeline {
             steps {
                 script {
                     sh '''
-                        echo "=== Deploying Application ==="
+                        echo "Deploying Application"
                         
-                        # Stop existing services
                         docker compose down || true
                         
-                        # Start services
                         docker compose up -d --build voting-app mysql-db
                         
-                        # Wait and check status
                         sleep 10
                         docker compose ps
                     '''
@@ -192,18 +185,18 @@ pipeline {
             steps {
                 script {
                     sh """
-                        echo "=== Health Check ==="
+                        echo "Health Check"
                         
                         for i in {1..10}; do
                             if curl -f http://localhost:${APP_PORT}/health 2>/dev/null; then
-                                echo "✓ Application healthy on port ${APP_PORT}"
+                                echo "Application healthy on port ${APP_PORT}"
                                 exit 0
                             fi
                             echo "Attempt \$i/10: Waiting..."
                             sleep 5
                         done
                         
-                        echo "⚠️ Health check timeout"
+                        echo "Health check timeout"
                         docker compose logs voting-app --tail=10
                         exit 0
                     """
@@ -221,7 +214,7 @@ pipeline {
         }
         
         success {
-            echo '🎉 Pipeline Successful!'
+            echo 'Pipeline Successful'
             
             script {
                 echo "Application: http://localhost:${APP_PORT}"
@@ -229,7 +222,7 @@ pipeline {
                 
                 sh '''
                     echo ""
-                    echo "=== Services ==="
+                    echo "Services"
                     docker compose ps
                     echo ""
                     echo "Commands:"
@@ -240,11 +233,11 @@ pipeline {
         }
         
         failure {
-            echo '❌ Pipeline Failed'
+            echo 'Pipeline Failed'
             
             script {
                 sh '''
-                    echo "=== Debug Info ==="
+                    echo "Debug Info"
                     echo "Docker images:"
                     docker images | grep voting-app || echo "No voting-app images"
                     echo ""
