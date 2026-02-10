@@ -36,8 +36,8 @@ pipeline {
                         dotnet tool list --global | grep reportgenerator || \
                         dotnet tool install --global dotnet-reportgenerator-globaltool
                         
-                        echo "3. Checking Docker Compose..."
-                        docker compose version && echo "Docker Compose is available"
+                        echo "3. Docker Compose:"
+                        docker compose version
                     '''
                 }
             }
@@ -85,8 +85,10 @@ pipeline {
                                   -reports:./**/coverage.cobertura.xml \
                                   -targetdir:./TestResults \
                                   -reporttypes:OpenCover
+                                
+                                echo "Coverage files generated successfully"
                             else
-                                echo "Creating placeholder coverage file"
+                                echo "WARNING: No coverage files found"
                                 echo "<?xml version='1.0'?><CoverageSession/>" > TestResults/coverage.opencover.xml
                             fi
                         '''
@@ -114,30 +116,60 @@ pipeline {
         
         stage('SonarQube Analysis') {
             when {
-                expression { fileExists('src/TestResults/coverage.opencover.xml') }
+                expression { 
+                    fileExists('src/TestResults/coverage.opencover.xml') && 
+                    env.SONAR_HOST_URL != null 
+                }
             }
             
             steps {
+                script {
+                    echo "=== Checking SonarQube Connection ==="
+                    
+                    // Test SonarQube connectivity
+                    sh '''
+                        echo "Testing connection to ${SONAR_HOST_URL}"
+                        curl -f ${SONAR_HOST_URL}/api/system/status || echo "SonarQube not reachable"
+                    '''
+                }
+                
                 dir('src') {
                     withSonarQubeEnv('SonarQube-Local') {
-                        sh '''
-                            echo "=== SonarQube Analysis ==="
+                        script {
+                            echo "=== Starting SonarQube Analysis ==="
                             
-                            dotnet sonarscanner begin \
-                              /k:"sample-voting-dotnet-app-v1.0" \
-                              /n:"Voting Application" \
-                              /v:"${BUILD_ID}" \
-                              /d:sonar.host.url="${SONAR_HOST_URL}" \
-                              /d:sonar.cs.vstest.reportsPaths="TestResults/*.trx" \
-                              /d:sonar.cs.opencover.reportsPaths="TestResults/coverage.opencover.xml" \
-                              /d:sonar.coverage.exclusions="**Tests*.cs,**/Migrations/**" \
-                              /d:sonar.exclusions="**/wwwroot/lib/**,**/node_modules/**"
-                            
-                            dotnet build VotingAppSolution.sln --configuration Release
-                            
-                            dotnet sonarscanner end
-                        '''
+                            sh '''
+                                # Start analysis
+                                dotnet sonarscanner begin \
+                                  /k:"sample-voting-dotnet-app-v1.0" \
+                                  /n:"Voting Application" \
+                                  /v:"${BUILD_ID}" \
+                                  /d:sonar.host.url="${SONAR_HOST_URL}" \
+                                  /d:sonar.cs.vstest.reportsPaths="TestResults/*.trx" \
+                                  /d:sonar.cs.opencover.reportsPaths="TestResults/coverage.opencover.xml" \
+                                  /d:sonar.coverage.exclusions="**Tests*.cs,**/Migrations/**" \
+                                  /d:sonar.exclusions="**/wwwroot/lib/**,**/node_modules/**" \
+                                  /d:sonar.verbose=true
+                                
+                                # Build with analysis
+                                dotnet build VotingAppSolution.sln --configuration Release
+                                
+                                # End analysis
+                                dotnet sonarscanner end
+                            '''
+                        }
                     }
+                }
+            }
+            
+            post {
+                success {
+                    echo "SonarQube analysis completed successfully"
+                    echo "Dashboard: ${SONAR_HOST_URL}/dashboard?id=sample-voting-dotnet-app-v1.0"
+                }
+                failure {
+                    echo "SonarQube analysis failed - continuing pipeline"
+                    // Don't fail the entire pipeline for SonarQube issues
                 }
             }
         }
@@ -154,6 +186,7 @@ pipeline {
         stage('Push to Registry') {
             steps {
                 script {
+                    echo "=== Pushing to Registry ==="
                     docker.withRegistry("http://${DOCKER_REGISTRY}") {
                         docker.image("${DOCKER_REGISTRY}/${IMAGE_NAME}:${IMAGE_TAG}").push()
                         docker.image("${DOCKER_REGISTRY}/${IMAGE_NAME}:${IMAGE_TAG}").push('latest')
@@ -206,7 +239,10 @@ pipeline {
     post {
         always {
             script {
-                archiveArtifacts artifacts: 'src/**/TestResults/*.trx,src/**/TestResults/*.xml'
+                // Archive test results
+                archiveArtifacts artifacts: 'src/**/TestResults/*.trx,src/**/TestResults/*.xml', fingerprint: true
+                
+                // Clean workspace
                 cleanWs()
             }
         }
@@ -215,16 +251,20 @@ pipeline {
             echo '=== Pipeline Successful ==='
             
             script {
-                echo "Application: http://localhost:${APP_PORT}"
-                echo "Registry: http://${DOCKER_REGISTRY}"
+                echo "🌐 Application URL: http://localhost:${APP_PORT}"
+                echo "🐳 Registry: http://${DOCKER_REGISTRY}"
+                
+                if (env.SONAR_HOST_URL) {
+                    echo "📊 SonarQube: ${SONAR_HOST_URL}/dashboard?id=sample-voting-dotnet-app-v1.0"
+                }
                 
                 sh '''
                     echo ""
-                    echo "=== Services ==="
+                    echo "=== Service Status ==="
                     docker compose ps
                     echo ""
                     echo "=== Useful Commands ==="
-                    echo "Logs: docker compose logs -f voting-app"
+                    echo "View logs: docker compose logs -f voting-app"
                     echo "Stop: docker compose down"
                     echo "Restart: docker compose restart voting-app"
                 '''
@@ -237,7 +277,7 @@ pipeline {
             script {
                 sh '''
                     echo "=== Debug Information ==="
-                    echo "Docker Compose Version:"
+                    echo "Docker Compose:"
                     docker compose version
                     echo ""
                     echo "Docker Images:"
@@ -246,8 +286,11 @@ pipeline {
                     echo "Running Containers:"
                     docker ps
                     echo ""
-                    echo "Test Results:"
-                    ls -la src/TestResults/ || echo "No test results directory"
+                    echo "Registry Status:"
+                    curl -s http://localhost:5001/v2/_catalog || echo "Registry not accessible"
+                    echo ""
+                    echo "SonarQube Status:"
+                    curl -s http://localhost:9000/api/system/status || echo "SonarQube not accessible"
                 '''
             }
         }
